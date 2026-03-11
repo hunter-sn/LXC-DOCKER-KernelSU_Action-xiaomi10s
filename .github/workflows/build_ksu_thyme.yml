@@ -48,7 +48,8 @@ jobs:
                       CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
       - name: 上傳編譯產物
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # 升級至 v4
         with:
           name: KernelSU-Xiaomi10S-Latest
           path: kernel-source/out/arch/arm64/boot/Image.gz-dtb
+          compression-level: 9 # v4 支持設置壓縮級別，推薦開啟以節省空間
