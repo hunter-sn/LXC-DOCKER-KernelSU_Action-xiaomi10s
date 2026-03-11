@@ -1,0 +1,54 @@
+name: Build Xiaomi 10S Kernel with KernelSU
+on:
+  workflow_dispatch: # 手動觸發編譯
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: 安裝編譯環境
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev libncurses-dev
+          # 下載專用 Clang 編譯器（小米 10S 建議使用 12.0 以上版本）
+          mkdir clang
+          curl -LO https://googlesource.com
+          tar -C clang/ -zxvf clang-r416183b.tar.gz
+
+      - name: 拉取核心源碼
+        run: |
+          # 使用對小米 10S 支援較好的 4.19 核心源碼
+          git clone --depth=1 https://github.com -b 13 kernel-source
+
+      - name: 集成最新 KernelSU
+        working-directory: kernel-source
+        run: |
+          # 這裡會拉取 KernelSU 官方最新的 main 分支代碼
+          curl -LSs "https://githubusercontent.com" | bash -s main
+          # 強制開啟 KPROBES 配置（4.19 核心必須）
+          echo "CONFIG_KPROBES=y" >> arch/arm64/configs/thyme_defconfig
+          echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/thyme_defconfig
+          echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/thyme_defconfig
+
+      - name: 開始編譯
+        working-directory: kernel-source
+        run: |
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+          export ARCH=arm64
+          export SUBARCH=arm64
+          make O=out thyme_defconfig
+          make -j$(nproc --all) O=out \
+                      ARCH=arm64 \
+                      CC=clang \
+                      CLANG_TRIPLE=aarch64-linux-gnu- \
+                      CROSS_COMPILE=aarch64-linux-android- \
+                      CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
+      - name: 上傳編譯產物
+        uses: actions/upload-artifact@v3
+        with:
+          name: KernelSU-Xiaomi10S-Latest
+          path: kernel-source/out/arch/arm64/boot/Image.gz-dtb
