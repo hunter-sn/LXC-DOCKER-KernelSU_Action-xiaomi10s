@@ -13,33 +13,28 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev libncurses-dev git curl
-          
+
           # 建立工具链目录
           mkdir -p $GITHUB_WORKSPACE/clang
           
-          # 使用更稳定的 Clang 下载链接 (Android 官方 AOSP 预编译版本)
-          # 这里改用直接下载特定的版本号，避免使用带有特殊字符的链接导致 curl 报错
-          curl -L https://googlesource.com -o clang.tar.gz
-          tar -C $GITHUB_WORKSPACE/clang -zxvf clang.tar.gz
-          
-          # 下载交叉编译工具链 (GCC 兼容性)
-          mkdir -p $GITHUB_WORKSPACE/gcc64
-          curl -L https://googlesource.com -o gcc64.tar.gz
-          tar -C $GITHUB_WORKSPACE/gcc64 -zxvf gcc64.tar.gz
+          # 方案：改用 Proton Clang 或类似的预编译包，下载更稳定
+          curl -L https://github.com -o clang.tar.gz
+          tar -C $GITHUB_WORKSPACE/clang --strip-components=1 -zxvf clang.tar.gz
 
       - name: 拉取内核源码并集成 KernelSU
         run: |
           git clone --depth=1 https://github.com -b 13 kernel-source
           cd kernel-source
           
-          # 集成最新的 KernelSU (使用 main 分支以超越 0.9.5)
+          # 集成最新的 KernelSU main 分支 (最新开发版)
           curl -LSs "https://githubusercontent.com" | bash -s main
           
-          # 必须针对 4.19 内核手动开启配置
-          sed -i 's/CONFIG_KPROBES is not set/CONFIG_KPROBES=y/g' arch/arm64/configs/thyme_defconfig
+          # 自动修正 thyme_defconfig 配置
           echo "CONFIG_KPROBES=y" >> arch/arm64/configs/thyme_defconfig
           echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/thyme_defconfig
           echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/thyme_defconfig
+          # 针对 4.19 内核关闭必要的安全校验以顺利通过编译
+          echo "CONFIG_OVERLAY_FS=y" >> arch/arm64/configs/thyme_defconfig
 
 
       - name: 集成最新 KernelSU
@@ -52,19 +47,23 @@ jobs:
           echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/thyme_defconfig
           echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/thyme_defconfig
 
-      - name: 開始編譯
+      - name: 开始编译
         working-directory: kernel-source
         run: |
           export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
           export ARCH=arm64
-          export SUBARCH=arm64
           make O=out thyme_defconfig
           make -j$(nproc --all) O=out \
                       ARCH=arm64 \
                       CC=clang \
-                      CLANG_TRIPLE=aarch64-linux-gnu- \
-                      CROSS_COMPILE=aarch64-linux-android- \
-                      CROSS_COMPILE_ARM32=arm-linux-androideabi-
+                      CROSS_COMPILE=aarch64-linux-gnu- \
+                      CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+                      LD=ld.lld \
+                      AR=llvm-ar \
+                      NM=llvm-nm \
+                      OBJCOPY=llvm-objcopy \
+                      OBJDUMP=llvm-objdump \
+                      STRIP=llvm-strip
 
       - name: 上傳編譯產物
         uses: actions/upload-artifact@v4  # 升級至 v4
